@@ -14,9 +14,10 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 
-from .api import EmailVision
+from .api import EmailVision, EmailVisionError
 # Silence potential warnings from static analysis tools:
 assert EmailVision
+assert EmailVisionError
 
 __author__ = "Eugene Wee"
 __copyright__ = "Copyright 2012, 42 Ventures Pte Ltd"
