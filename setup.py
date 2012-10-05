@@ -3,9 +3,9 @@ from setuptools import setup, find_packages
 
 import emailvision
 
-CLASSIFIERS = ["Development Status :: 5 - Production/Stable",
+CLASSIFIERS = ["Development Status :: 1 - Planning",
                "Intended Audience :: Developers",
-               "License :: OSI Approved :: MIT License",
+               "License :: OSI Approved :: Apache Software License",
                "Natural Language :: English",
                "Operating System :: OS Independent",
                "Programming Language :: Python",
