@@ -19,45 +19,44 @@ from lxml import etree
 from lxml.builder import E
 
 
-class EmailVisionError(Exception):
-    """
-    Exception raised when an EmailVision API call fails either due to a network
-    related error or for an EmailVision specific reason.
-    """
-    def __init__(self, error, code=None):
-        self.error = error
-        self.code = code
-        if self.code is not None:
-            try:
-                self.code = int(self.code)
-            except ValueError:
-                pass
-
-    def __unicode__(self):
-        if self.code is None:
-            message = self.error
-        else:
-            message = u"{error} ({code})".format(error=self.error,
-                                                 code=self.code)
-        return u"EmailVisionError({message})".format(message=message)
-
-    def __str__(self):
-        return unicode(self).encode("utf8")
-
-    def __repr__(self):
-        return str(self)
-
-
 class EmailVision(object):
     """
     EmailVision REST API wrapper.
     """
+    class Error(Exception):
+        """
+        Exception raised when an EmailVision API call fails either due to a
+        network related error or for an EmailVision specific reason.
+        """
+        def __init__(self, error, code=None):
+            self.error = error
+            self.code = code
+            if self.code is not None:
+                try:
+                    self.code = int(self.code)
+                except ValueError:
+                    pass
+
+        def __unicode__(self):
+            if self.code is None:
+                message = self.error
+            else:
+                message = u"{error} ({code})".format(error=self.error,
+                                                     code=self.code)
+            return u"EmailVision.Error({message})".format(message=message)
+
+        def __str__(self):
+            return unicode(self).encode("utf8")
+
+        def __repr__(self):
+            return str(self)
+
     def __init__(self, api, server, login, password, api_key, secure=True):
         """
         Create the API wrapper object.
         """
         if not (api and server):
-            raise EmailVisionError(
+            raise self.Error(
                 u"API and API server URL must be specified.",
             )
 
@@ -90,7 +89,7 @@ class EmailVision(object):
                 raise
             else:
                 # Combine the exception passed in with this exception:
-                raise EmailVisionError(
+                raise self.Error(
                     u"Connection close failure: {0}; "
                     u"Exception raised prior to connection close: {1}".format(
                         e,
@@ -110,7 +109,7 @@ class EmailVision(object):
         try:
             return requests.get(url, params=params)
         except Exception as e:
-            raise EmailVisionError(
+            raise self.Error(
                 u"Error connecting to EmailVision by HTTP GET: {0!r}".format(
                     e,
                 ),
@@ -123,7 +122,7 @@ class EmailVision(object):
         try:
             return requests.post(url, data=data)
         except Exception as e:
-            raise EmailVisionError(
+            raise self.Error(
                 u"Error connecting to EmailVision by HTTP POST: {0!r}".format(
                     e,
                 ),
@@ -137,7 +136,7 @@ class EmailVision(object):
         try:
             return etree.fromstring(text)
         except Exception as e:
-            raise EmailVisionError(
+            raise self.Error(
                 u"Error parsing response from EmailVision: {0!r}".format(e),
             )
 
@@ -149,7 +148,7 @@ class EmailVision(object):
         """
         Call the REST API method at the given URL, using the given HTTP method
         with the parameters supplied.
-        Returns the text of the response, or raises an EmailVisionError if
+        Returns the text of the response, or raises an EmailVision.Error if
         there is an error.
         """
         if http_method == "get":
@@ -157,7 +156,7 @@ class EmailVision(object):
         elif http_method == "post":
             result = self._call_post_method(url, params)
         else:
-            raise EmailVisionError(
+            raise self.Error(
                 u"Internal API error: invalid HTTP method '{0}'".format(
                     http_method,
                 ),
@@ -166,7 +165,7 @@ class EmailVision(object):
         try:
             result.raise_for_status()
         except Exception as e:
-            raise EmailVisionError(u"{0!r}".format(e))
+            raise self.Error(u"{0!r}".format(e))
 
         return result.text
 
@@ -175,7 +174,7 @@ class EmailVision(object):
         Open the session connection with the API server.
         """
         if self.token is not None:
-            raise EmailVisionError(u"API server connection already open.")
+            raise self.Error(u"API server connection already open.")
 
         xml_tree = self._parse_xml(self.call("connect/open/",
                                              "get",
@@ -185,7 +184,7 @@ class EmailVision(object):
         try:
             self.token = xml_tree.xpath("/response/result[1]")[0].text
         except IndexError:
-            raise EmailVisionError(u"Unexpected response from EmailVision")
+            raise self.Error(u"Unexpected response from EmailVision")
 
     def close(self):
         """
@@ -195,12 +194,12 @@ class EmailVision(object):
         try:
             result_text = xml_tree.xpath("/response/result[1]")[0].text
         except IndexError:
-            raise EmailVisionError(u"Unexpected response from EmailVision")
+            raise self.Error(u"Unexpected response from EmailVision")
 
         if result_text == "connection closed":
             self.token = None
         else:
-            raise EmailVisionError(
+            raise self.Error(
                 u"Failure to close API server connection: {0}".format(
                     result_text,
                 ),
