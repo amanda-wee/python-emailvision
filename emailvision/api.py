@@ -16,19 +16,29 @@ limitations under the License.
 
 import requests
 from lxml import etree
-from lxml.builder import E
 
 
 class EmailVision(object):
     """
     EmailVision REST API wrapper.
     """
+
+    #####################
+    # Exception classes #
+    #####################
+
     class Error(Exception):
         """
         Exception raised when an EmailVision API call fails either due to a
         network related error or for an EmailVision specific reason.
         """
         def __init__(self, error, code=None):
+            """
+            Create the Error exception object.
+
+            error: error message
+            code: EmailVision error code
+            """
             self.error = error
             self.code = code
             if self.code is not None:
@@ -51,37 +61,57 @@ class EmailVision(object):
         def __repr__(self):
             return str(self)
 
-    def __init__(self, api, server, login, password, api_key, secure=True):
+    ####################
+    # Standard methods #
+    ####################
+
+    def __init__(self, server, api, login, password, api_key, secure=True):
         """
         Create the API wrapper object.
+
+        server: URI identifying the EmailVision server to access, e.g.,
+                "example.com"
+        api: name of the EmailVision API to use, e.g., "apimember"
+        login: API user account login username
+        password: API user account password
+        api_key: API key
+        secure: HTTPS is used if True, otherwise HTTP is used
         """
-        if not (api and server):
+        if not (server and api):
             raise self.Error(
-                u"API and API server URL must be specified.",
+                u"API server and API name must be specified.",
             )
 
-        self.base_url = u"{protocol}://{server}/{api}/services/rest/".format(
+        self._base_url = u"{protocol}://{server}/{api}/services/rest/".format(
             protocol=u"https" if secure else u"http",
-            api=api,
             server=server,
+            api=api,
         )
-        self.token = None
+        self._token = None
         self.open(login, password, api_key)
 
     def __unicode__(self):
-        return self.base_url
+        """
+        Returns Unicode string containing the base URL used for API calls.
+        """
+        return self._base_url
 
     def __str__(self):
+        """
+        Returns string version of Unicode string representation.
+        """
         return unicode(self).encode("utf8")
 
-    ##########################################
-    # Methods to enable with statement usage #
-    ##########################################
-
     def __enter__(self):
+        """
+        Enables with statement usage.
+        """
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
+        """
+        Close connection prior to exiting the with statement.
+        """
         try:
             self.close()
         except Exception as e:
@@ -98,109 +128,139 @@ class EmailVision(object):
                 )
         return False
 
-    #################################################
-    # Helper methods that are implementation detail #
-    #################################################
+    ######################
+    # Public API methods #
+    ######################
 
-    def _call_get_method(self, url, params):
-        if self.token is not None:
-            params["token"] = self.token
-        url = "".join((self.base_url, url))
+    @property
+    def token(self):
+        """
+        Returns the API token from EmailVision.
+        """
+        return self._token
+
+    def get(self, path, query_string_params=None, parse_xml=True):
+        """
+        Call the EmailVision REST API method at the given path using HTTP GET.
+        Returns the element tree obtained from parsing the response text as an
+            XML document if parse_xml is True, otherwise returns the text of
+            the response as a unicode string.
+        Raises an EmailVision.Error if there is an error.
+
+        Specifying the path:
+        For the "path info" API, the path is a string with the API parameters
+            fill in. For example, if the docs state:
+            http://{server}/apiccmd/services/rest/campaign/last/{token}/{limit}
+            Then the path might be: "campaign/last/foo/123", where the token is
+            obtained through the token property of the EmailVision object.
+        For the "query string" API, the query_string_params argument should
+            be supplied. For example:
+            path="campaign/last"
+            query_string_params={"token": foo, "limit": 123}
+        """
+        if query_string_params is None:
+            query_string_params = {}
+        query_string_params["type"] = "xml"
+
+        url = u"".join((self._base_url, path))
         try:
-            return requests.get(url, params=params)
+            response = requests.get(url, params=query_string_params)
         except Exception as e:
             raise self.Error(
-                u"Error connecting to EmailVision by HTTP GET: {0!r}".format(
-                    e,
+                u"HTTP GET request for API call failed: {0!r}".format(e),
+            )
+
+        self._check_response_status(response)
+        return (self._parse_xml(response.content) if parse_xml else
+                response.text)
+
+    def post(self, path, payload=None, parse_xml=True):
+        """
+        Call the EmailVision REST API method at the given path using HTTP POST.
+        Returns the element tree obtained from parsing the response text as an
+            XML document if parse_xml is True, otherwise returns the text of
+            the response as a unicode string.
+        Raises an EmailVision.Error if there is an error.
+
+        Specifying the path:
+        The path is a string with the API parameters filled in. For example, if
+            the docs state:
+            http://{server}/apiccmd/services/rest/message/create/{token}
+            Then the path might be: "message/create/foo" where the token is
+            obtained through the token property of the EmailVision object.
+
+        Specifying the payload:
+        If provided, the payload is a string (most likely an XML document) that
+            is sent as the HTTP POST payload. A dictionary of name/value pairs
+            may also be supplied as the payload.
+        """
+        url = u"".join((self._base_url, path))
+        try:
+            response = requests.post(url, data=payload, params={"type": "xml"})
+        except Exception as e:
+            raise self.Error(
+                u"HTTP POST request for API call failed: {0!r}".format(e),
+            )
+
+        self._check_response_status(response)
+        return (self._parse_xml(response.content) if parse_xml else
+                response.text)
+
+    def open(self, login, password, api_key):
+        """
+        Open the session connection with the API server, setting the token.
+
+        This will be called automatically when the object is created, so it
+        should only be used to reinitialise the connection after calling close.
+        """
+        if self._token is not None:
+            raise self.Error(u"API server connection already open.")
+
+        path = "connect/open/{login}/{password}/{api_key}".format(
+            login=login,
+            password=password,
+            api_key=api_key,
+        )
+        response_xml = self.get(path)
+        try:
+            self._token = response_xml.xpath("/response/result[1]")[0].text
+        except IndexError:
+            raise self.Error(u"Unexpected response from EmailVision.")
+
+    def close(self):
+        """
+        Close the session connection with the API server.
+        """
+        path = "connect/close/{token}".format(token=self._token)
+        response_xml = self.get(path)
+        try:
+            result_text = response_xml.xpath("/response/result[1]")[0].text
+        except IndexError:
+            raise self.Error(u"Unexpected response from EmailVision")
+
+        if result_text == "connection closed":
+            self._token = None
+        else:
+            raise self.Error(
+                u"Failure to close API server connection: {0}".format(
+                    result_text,
                 ),
             )
 
-    def _call_post_method(self, url, params):
-        if self.token is not None:
-            url = "".join((self.base_url, url, self.token))
-        data = self._format_xml_params(params)
-        try:
-            return requests.post(url, data=data)
-        except Exception as e:
-            raise self.Error(
-                u"Error connecting to EmailVision by HTTP POST: {0!r}".format(
-                    e,
-                ),
-            )
+    ##########################################
+    # Helper methods (implementation detail) #
+    ##########################################
 
-    def _format_xml_params(self, params):
-        # TODO
-        return etree.tostring(E("root"), encoding="utf-8")
+    def _check_response_status(self, response):
+        try:
+            response.raise_for_status()
+        except Exception as e:
+            raise self.Error(u"{0!r}".format(e))
 
     def _parse_xml(self, text):
         try:
             return etree.fromstring(text)
         except Exception as e:
             raise self.Error(
-                u"Error parsing response from EmailVision: {0!r}".format(e),
-            )
-
-    ######################
-    # Public API methods #
-    ######################
-
-    def call(self, url, http_method="get", **params):
-        """
-        Call the REST API method at the given URL, using the given HTTP method
-        with the parameters supplied.
-        Returns the text of the response, or raises an EmailVision.Error if
-        there is an error.
-        """
-        if http_method == "get":
-            result = self._call_get_method(url, params)
-        elif http_method == "post":
-            result = self._call_post_method(url, params)
-        else:
-            raise self.Error(
-                u"Internal API error: invalid HTTP method '{0}'".format(
-                    http_method,
-                ),
-            )
-
-        try:
-            result.raise_for_status()
-        except Exception as e:
-            raise self.Error(u"{0!r}".format(e))
-
-        return result.text
-
-    def open(self, login, password, api_key):
-        """
-        Open the session connection with the API server.
-        """
-        if self.token is not None:
-            raise self.Error(u"API server connection already open.")
-
-        xml_tree = self._parse_xml(self.call("connect/open/",
-                                             "get",
-                                             login=login,
-                                             pwd=password,
-                                             key=api_key))
-        try:
-            self.token = xml_tree.xpath("/response/result[1]")[0].text
-        except IndexError:
-            raise self.Error(u"Unexpected response from EmailVision")
-
-    def close(self):
-        """
-        Close the session connection with the API server.
-        """
-        xml_tree = self._parse_xml(self.call("connect/close/", "get"))
-        try:
-            result_text = xml_tree.xpath("/response/result[1]")[0].text
-        except IndexError:
-            raise self.Error(u"Unexpected response from EmailVision")
-
-        if result_text == "connection closed":
-            self.token = None
-        else:
-            raise self.Error(
-                u"Failure to close API server connection: {0}".format(
-                    result_text,
-                ),
+                u"Could not parse response from EmailVision: {0!r}".format(e),
             )
