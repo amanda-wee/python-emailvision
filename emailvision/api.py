@@ -196,7 +196,10 @@ class EmailVision(object):
         """
         url = u"".join((self._base_url, path))
         try:
-            response = requests.post(url, data=payload, params={"type": "xml"})
+            response = requests.post(url,
+                                     data=payload,
+                                     params={"type": "xml"},
+                                     headers={"Content-Type": "text/xml"})
         except Exception as e:
             raise self.Error(
                 u"HTTP POST request for API call failed: {0!r}".format(e),
