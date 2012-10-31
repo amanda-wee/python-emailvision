@@ -32,7 +32,7 @@ class EmailVision(object):
         Exception raised when an EmailVision API call fails either due to a
         network related error or for an EmailVision specific reason.
         """
-        def __init__(self, error, code=None):
+        def __init__(self, error, code=None, xml_root=None):
             """
             Create the Error exception object.
 
@@ -46,6 +46,7 @@ class EmailVision(object):
                     self.code = int(self.code)
                 except ValueError:
                     pass
+            self.xml_root = xml_root
 
         def __unicode__(self):
             if self.code is None:
@@ -170,8 +171,7 @@ class EmailVision(object):
                 u"HTTP GET request for API call failed: {0!r}".format(e),
             )
 
-        self._check_response_status(response)
-        return (self._parse_xml(response.content) if parse_xml else
+        return (self._parse_response_for_xml(response) if parse_xml else
                 response.text)
 
     def post(self, path, payload=None, parse_xml=True):
@@ -202,8 +202,7 @@ class EmailVision(object):
                 u"HTTP POST request for API call failed: {0!r}".format(e),
             )
 
-        self._check_response_status(response)
-        return (self._parse_xml(response.content) if parse_xml else
+        return (self._parse_response_for_xml(response) if parse_xml else
                 response.text)
 
     def open(self, login, password, api_key):
@@ -251,16 +250,29 @@ class EmailVision(object):
     # Helper methods (implementation detail) #
     ##########################################
 
-    def _check_response_status(self, response):
+    def _parse_response_for_xml(self, response):
         try:
             response.raise_for_status()
+            status_error = None
         except Exception as e:
-            raise self.Error(u"{0!r}".format(e))
+            status_error = self.Error(u"{0!r}".format(e))
 
-    def _parse_xml(self, text):
         try:
-            return etree.fromstring(text)
+            xml_root = etree.fromstring(response.content)
         except Exception as e:
+            # The error in parsing the XML could be that the response content
+            # was not XML to begin with due to some HTTP error. If there is
+            # such an error, raise it as an EmailVision.Error:
+            if status_error is not None:
+                raise status_error
+
+            # Otherwise translate the exception into an EmailVision.Error:
             raise self.Error(
                 u"Could not parse response from EmailVision: {0!r}".format(e),
             )
+
+        if status_error is None:
+            return xml_root
+        else:
+            status_error.xml_root = xml_root
+            raise status_error
