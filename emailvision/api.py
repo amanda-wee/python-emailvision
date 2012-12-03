@@ -54,6 +54,11 @@ class EmailVision(object):
             else:
                 message = u"{error} ({code})".format(error=self.error,
                                                      code=self.code)
+            if self.xml_root is not None:
+                message = u"{message} [{xml}]".format(
+                    message=message,
+                    xml=etree.tostring(self.xml_root),
+                )
             return u"EmailVision.Error({message})".format(message=message)
 
         def __str__(self):
@@ -257,8 +262,8 @@ class EmailVision(object):
         try:
             response.raise_for_status()
             status_error = None
-        except Exception as e:
-            status_error = self.Error(u"{0!r}".format(e))
+        except Exception as status_error:
+            pass
 
         try:
             xml_root = etree.fromstring(response.content)
@@ -267,7 +272,7 @@ class EmailVision(object):
             # was not XML to begin with due to some HTTP error. If there is
             # such an error, raise it as an EmailVision.Error:
             if status_error is not None:
-                raise status_error
+                raise self.Error(u"{0!r}".format(status_error))
 
             # Otherwise translate the exception into an EmailVision.Error:
             raise self.Error(
@@ -277,5 +282,4 @@ class EmailVision(object):
         if status_error is None:
             return xml_root
         else:
-            status_error.xml_root = xml_root
-            raise status_error
+            raise self.Error(u"{0!r}".format(status_error), xml_root=xml_root)

@@ -3,7 +3,7 @@ from setuptools import setup, find_packages
 
 import emailvision
 
-CLASSIFIERS = ["Development Status :: 4 - Beta",
+CLASSIFIERS = ["Development Status :: 5 - Production/Stable",
                "Intended Audience :: Developers",
                "License :: OSI Approved :: Apache Software License",
                "Natural Language :: English",
